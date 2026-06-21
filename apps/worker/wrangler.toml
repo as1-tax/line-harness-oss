@@ -1,4 +1,4 @@
-name = "line-harness"
+name = "line-harness-oss"
 main = "src/index.ts"
 compatibility_date = "2024-12-01"
 # nodejs_compat is required by @line-harness/update-engine which pulls in
@@ -13,7 +13,7 @@ workers_dev = true
 # デフォルト = テスト環境 (noda@)
 # 使い方: npx wrangler deploy
 # ═══════════════════════════════════════════════════════════════
-account_id = "YOUR_DEV_ACCOUNT_ID"
+account_id = "1dcc618472623c3ff0f9485492a05a12"
 
 [assets]
 directory = "dist/client"
