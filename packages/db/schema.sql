@@ -5,22 +5,26 @@
 -- Friends
 -- ============================================================
 CREATE TABLE IF NOT EXISTS friends (
-  id               TEXT PRIMARY KEY,
-  line_user_id     TEXT UNIQUE NOT NULL,
-  display_name     TEXT,
-  picture_url      TEXT,
-  status_message   TEXT,
-  is_following     INTEGER NOT NULL DEFAULT 1,
-  user_id          TEXT,
-  ig_igsid         TEXT,
-  score            INTEGER NOT NULL DEFAULT 0,
-  created_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now', '+9 hours')),
-  updated_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now', '+9 hours'))
+  id                  TEXT PRIMARY KEY,
+  line_user_id        TEXT UNIQUE NOT NULL,
+  display_name        TEXT,
+  picture_url         TEXT,
+  status_message      TEXT,
+  is_following        INTEGER NOT NULL DEFAULT 1,
+  user_id             TEXT,
+  ig_igsid            TEXT,
+  score               INTEGER NOT NULL DEFAULT 0,
+  primary_staff_id    TEXT REFERENCES staff_members(id) ON DELETE SET NULL,
+  secondary_staff_id  TEXT REFERENCES staff_members(id) ON DELETE SET NULL,
+  created_at          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now', '+9 hours')),
+  updated_at          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now', '+9 hours'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_friends_line_user_id ON friends (line_user_id);
 CREATE INDEX IF NOT EXISTS idx_friends_user_id ON friends (user_id);
 CREATE INDEX IF NOT EXISTS idx_friends_ig_igsid ON friends (ig_igsid);
+CREATE INDEX IF NOT EXISTS idx_friends_primary_staff ON friends (primary_staff_id);
+CREATE INDEX IF NOT EXISTS idx_friends_secondary_staff ON friends (secondary_staff_id);
 
 -- ============================================================
 -- Tags

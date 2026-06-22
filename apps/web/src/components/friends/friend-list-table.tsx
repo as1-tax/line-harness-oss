@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import type { Tag } from '@line-crm/shared'
+import type { Tag, StaffMember } from '@line-crm/shared'
 import type { FriendListItem } from '@/lib/api'
 import { api } from '@/lib/api'
 import FriendListRow from './friend-list-row'
@@ -11,9 +11,11 @@ interface Props {
   friends: FriendListItem[]
   allTags: Tag[]
   onRefresh: () => void
+  currentRole: string
+  staffList: StaffMember[]
 }
 
-export default function FriendListTable({ friends, allTags, onRefresh }: Props) {
+export default function FriendListTable({ friends, allTags, onRefresh, currentRole, staffList }: Props) {
   // Inline tag-management expander. The row's primary click navigates to
   // /chats; tag editing stays available here as a secondary action because
   // the chats page's FriendInfoSidebar currently only displays tags (no
@@ -25,11 +27,40 @@ export default function FriendListTable({ friends, allTags, onRefresh }: Props) 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  const toggleExpand = (id: string) => {
-    setExpandedId(expandedId === id ? null : id)
+  // 担当者割り当て用の一時選択値（expandedId ごとに管理）
+  const [assignPrimary, setAssignPrimary] = useState<string>('')
+  const [assignSecondary, setAssignSecondary] = useState<string>('')
+  const [assignLoading, setAssignLoading] = useState(false)
+  const [assignError, setAssignError] = useState('')
+
+  const toggleExpand = (id: string, friend?: FriendListItem) => {
+    const next = expandedId === id ? null : id
+    setExpandedId(next)
     setAddingTagForFriend(null)
     setSelectedTagId('')
     setError('')
+    // 展開時に現在の担当者をドロップダウンの初期値にセット
+    if (next && friend) {
+      setAssignPrimary(friend.primaryStaff?.id ?? '')
+      setAssignSecondary(friend.secondaryStaff?.id ?? '')
+    }
+    setAssignError('')
+  }
+
+  const handleAssign = async (friendId: string) => {
+    setAssignLoading(true)
+    setAssignError('')
+    try {
+      await api.friends.assign(friendId, {
+        primaryStaffId: assignPrimary || null,
+        secondaryStaffId: assignSecondary || null,
+      })
+      onRefresh()
+    } catch {
+      setAssignError('担当者の保存に失敗しました')
+    } finally {
+      setAssignLoading(false)
+    }
   }
 
   const handleAddTag = async (friendId: string) => {
@@ -83,10 +114,11 @@ export default function FriendListTable({ friends, allTags, onRefresh }: Props) 
           and the body forced to min-w-[900px]). */}
       <div className="overflow-x-auto">
         <div className="min-w-[900px]">
-          <div className="hidden lg:grid grid-cols-[80px_220px_120px_1fr_280px] gap-3 px-4 py-2 bg-gray-50 border-b border-gray-200 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
+          <div className="hidden lg:grid grid-cols-[80px_220px_120px_140px_1fr_280px] gap-3 px-4 py-2 bg-gray-50 border-b border-gray-200 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
             <div>対応マーク</div>
             <div>名前</div>
             <div>シナリオ</div>
+            <div>担当者</div>
             <div>受信メッセージ</div>
             <div>★つきタグ・友だち情報</div>
           </div>
@@ -101,7 +133,8 @@ export default function FriendListTable({ friends, allTags, onRefresh }: Props) 
               <div key={friend.id}>
                 <FriendListRow
                   friend={friend}
-                  onTagEditClick={() => toggleExpand(friend.id)}
+                  currentRole={currentRole}
+                  onTagEditClick={() => toggleExpand(friend.id, friend)}
                 />
 
                 {isExpanded && (
@@ -110,6 +143,53 @@ export default function FriendListTable({ friends, allTags, onRefresh }: Props) 
                       <p className="text-xs font-semibold text-gray-500 mb-1">LINE ユーザーID</p>
                       <p className="text-xs text-gray-600 font-mono break-all select-all">{friend.lineUserId}</p>
                     </div>
+
+                    {/* 担当者管理（owner のみ編集可） */}
+                    {currentRole === 'owner' && (
+                      <div>
+                        <p className="text-xs font-semibold text-gray-500 mb-2">担当者管理</p>
+                        <div className="flex flex-wrap items-end gap-3">
+                          <div>
+                            <label className="text-[10px] text-gray-500 block mb-1">主担当</label>
+                            <select
+                              className="text-sm border border-gray-300 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-green-500"
+                              value={assignPrimary}
+                              onChange={(e) => setAssignPrimary(e.target.value)}
+                            >
+                              <option value="">未割当</option>
+                              {staffList.filter((s) => s.isActive).map((s) => (
+                                <option key={s.id} value={s.id}>{s.name}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-gray-500 block mb-1">副担当</label>
+                            <select
+                              className="text-sm border border-gray-300 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-green-500"
+                              value={assignSecondary}
+                              onChange={(e) => setAssignSecondary(e.target.value)}
+                            >
+                              <option value="">未割当</option>
+                              {staffList.filter((s) => s.isActive).map((s) => (
+                                <option key={s.id} value={s.id}>{s.name}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <button
+                            onClick={() => handleAssign(friend.id)}
+                            disabled={assignLoading}
+                            className="px-3 py-1 text-xs font-medium rounded-md text-white disabled:opacity-50 transition-opacity"
+                            style={{ backgroundColor: '#06C755' }}
+                          >
+                            {assignLoading ? '保存中...' : '保存'}
+                          </button>
+                        </div>
+                        {assignError && (
+                          <p className="text-xs text-red-600 mt-1">{assignError}</p>
+                        )}
+                      </div>
+                    )}
+
                     <p className="text-xs font-semibold text-gray-500 mb-2">タグ管理</p>
                     <div className="flex flex-wrap gap-1.5 mb-2">
                       {friend.tags.map((tag) => (

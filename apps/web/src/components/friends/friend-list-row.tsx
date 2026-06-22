@@ -6,6 +6,7 @@ import TagBadge from './tag-badge'
 
 interface Props {
   friend: FriendListItem
+  currentRole: string
   // Toggles the inline tag-management section underneath the row. Wired up
   // to a discrete button (with stopPropagation) inside this component, NOT
   // to the row body — the row body navigates to /chats and we don't want
@@ -19,7 +20,7 @@ interface Props {
 // `/chats?friend=<id>` so the operator can read history / reply / mark as
 // resolved without leaving the list. The "タグ" button at the end of the
 // last column opens an inline tag editor (handled by the parent table).
-export default function FriendListRow({ friend, onTagEditClick }: Props) {
+export default function FriendListRow({ friend, currentRole: _currentRole, onTagEditClick }: Props) {
   const router = useRouter()
   const navigateToChat = () => router.push(`/chats?friend=${friend.id}`)
   const incoming = friend.latestIncomingMessage
@@ -42,7 +43,7 @@ export default function FriendListRow({ friend, onTagEditClick }: Props) {
           navigateToChat()
         }
       }}
-      className="grid grid-cols-[80px_220px_120px_1fr_280px] gap-3 px-4 py-3 border-b border-gray-100 hover:bg-gray-50 cursor-pointer items-start focus:outline-none focus:bg-gray-50"
+      className="grid grid-cols-[80px_220px_120px_140px_1fr_280px] gap-3 px-4 py-3 border-b border-gray-100 hover:bg-gray-50 cursor-pointer items-start focus:outline-none focus:bg-gray-50"
     >
       {/* 対応マーク — chats.status 由来 (unread / in_progress / resolved). */}
       <div className="pt-1">
@@ -96,6 +97,24 @@ export default function FriendListRow({ friend, onTagEditClick }: Props) {
           </div>
         ) : (
           <span className="text-xs text-gray-400">停止中</span>
+        )}
+      </div>
+
+      {/* 担当者 */}
+      <div className="pt-1">
+        {friend.primaryStaff ? (
+          <div>
+            <p className="text-xs font-medium text-gray-700 truncate" title={friend.primaryStaff.name}>
+              {friend.primaryStaff.name}
+            </p>
+            {friend.secondaryStaff && (
+              <p className="text-[10px] text-gray-400 mt-0.5 truncate" title={friend.secondaryStaff.name}>
+                副: {friend.secondaryStaff.name}
+              </p>
+            )}
+          </div>
+        ) : (
+          <span className="text-xs text-gray-300">未割当</span>
         )}
       </div>
 

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import type { Tag } from '@line-crm/shared'
+import type { Tag, StaffMember } from '@line-crm/shared'
 import { api } from '@/lib/api'
 import type { FriendListItem } from '@/lib/api'
 import Header from '@/components/layout/header'
@@ -37,6 +37,8 @@ export default function FriendsPage() {
   const { selectedAccountId } = useAccount()
   const [friends, setFriends] = useState<FriendListItem[]>([])
   const [allTags, setAllTags] = useState<Tag[]>([])
+  const [staffList, setStaffList] = useState<StaffMember[]>([])
+  const [currentRole, setCurrentRole] = useState('')
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [hasNextPage, setHasNextPage] = useState(false)
@@ -54,6 +56,16 @@ export default function FriendsPage() {
       if (res.success) setAllTags(res.data)
     } catch {
       // Non-blocking — tags used for filter
+    }
+  }, [])
+
+  const loadStaffList = useCallback(async (role: string) => {
+    if (role !== 'owner') return
+    try {
+      const res = await api.staff.list()
+      if (res.success) setStaffList(res.data)
+    } catch {
+      // Non-blocking — staff list used for assignment UI
     }
   }, [])
 
@@ -87,7 +99,10 @@ export default function FriendsPage() {
 
   useEffect(() => {
     loadTags()
-  }, [loadTags])
+    const role = localStorage.getItem('lh_staff_role') ?? ''
+    setCurrentRole(role)
+    loadStaffList(role)
+  }, [loadTags, loadStaffList])
 
   // Reset the URL-style account context to page 1 in a separate effect.
   // For user-driven filter changes (search/sort/handled/tag) we reset
@@ -203,13 +218,14 @@ export default function FriendsPage() {
       {loading ? (
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
           {[...Array(5)].map((_, i) => (
-            <div key={i} className="px-4 py-4 border-b border-gray-100 grid grid-cols-[80px_220px_120px_1fr_280px] gap-3 animate-pulse">
+            <div key={i} className="px-4 py-4 border-b border-gray-100 grid grid-cols-[80px_220px_120px_140px_1fr_280px] gap-3 animate-pulse">
               <div className="h-5 bg-gray-100 rounded w-16" />
               <div className="flex items-center gap-2">
                 <div className="w-9 h-9 rounded-full bg-gray-200" />
                 <div className="h-3 bg-gray-200 rounded w-24" />
               </div>
               <div className="h-3 bg-gray-100 rounded w-20" />
+              <div className="h-3 bg-gray-100 rounded w-16" />
               <div className="space-y-2">
                 <div className="h-3 bg-gray-100 rounded w-3/4" />
                 <div className="h-2 bg-gray-100 rounded w-20" />
@@ -219,7 +235,7 @@ export default function FriendsPage() {
           ))}
         </div>
       ) : (
-        <FriendListTable friends={friends} allTags={allTags} onRefresh={loadFriends} />
+        <FriendListTable friends={friends} allTags={allTags} onRefresh={loadFriends} currentRole={currentRole} staffList={staffList} />
       )}
 
       {!loading && total > 0 && (

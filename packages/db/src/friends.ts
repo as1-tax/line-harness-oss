@@ -10,6 +10,8 @@ export interface Friend {
   line_account_id: string | null;
   metadata: string;
   first_tracked_link_id: string | null;
+  primary_staff_id: string | null;
+  secondary_staff_id: string | null;
   created_at: string;
   updated_at: string;
 }

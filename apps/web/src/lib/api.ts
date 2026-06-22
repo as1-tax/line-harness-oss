@@ -135,6 +135,8 @@ export type FriendListItem = FriendWithTags & Partial<{
   latestOutgoingAt: string | null
   activeScenario: { name: string; status: string } | null
   handled: boolean
+  primaryStaff: { id: string; name: string } | null
+  secondaryStaff: { id: string; name: string } | null
 }>
 
 export const api = {
@@ -173,6 +175,11 @@ export const api = {
       fetchApi<ApiResponse<{ id: string | null; name: string | null; isDefault: boolean }>>(
         `/api/friends/${id}/rich-menu`,
       ),
+    assign: (friendId: string, body: { primaryStaffId?: string | null; secondaryStaffId?: string | null }) =>
+      fetchApi<ApiResponse<null>>(`/api/friends/${friendId}/assignment`, {
+        method: 'PUT',
+        body: JSON.stringify(body),
+      }),
   },
   tags: {
     list: () =>

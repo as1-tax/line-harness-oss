@@ -8,11 +8,13 @@ import {
   getFriendTags,
   getScenarios,
   enrollFriendInScenario,
+  getStaffById,
   jstNow,
 } from '@line-crm/db';
 import type { Friend as DbFriend, Tag as DbTag } from '@line-crm/db';
 import { fireEvent } from '../services/event-bus.js';
 import { buildMessage } from '../services/step-delivery.js';
+import { requireRole } from '../middleware/role-guard.js';
 import type { Env } from '../index.js';
 
 const friends = new Hono<Env>();
@@ -48,15 +50,30 @@ function serializeFriend(row: DbFriend) {
  * the chat-status path (?includeChatStatus=true). When absent, the fields
  * default to nullish so the response shape stays consistent for clients that
  * don't request them.
+ * primaryStaff / secondaryStaff are always included (null when unassigned).
  */
 function serializeFriendListRow(
-  row: DbFriend & { first_tracked_link_name?: string | null; chat_status?: string | null },
+  row: DbFriend & {
+    first_tracked_link_name?: string | null;
+    chat_status?: string | null;
+    primary_staff_name?: string | null;
+    secondary_staff_name?: string | null;
+  },
   includeChatStatus: boolean,
 ) {
   const base = serializeFriend(row);
-  if (!includeChatStatus) return base;
-  return {
+  const withStaff = {
     ...base,
+    primaryStaff: row.primary_staff_id && row.primary_staff_name
+      ? { id: row.primary_staff_id, name: row.primary_staff_name }
+      : null,
+    secondaryStaff: row.secondary_staff_id && row.secondary_staff_name
+      ? { id: row.secondary_staff_id, name: row.secondary_staff_name }
+      : null,
+  };
+  if (!includeChatStatus) return withStaff;
+  return {
+    ...withStaff,
     // L-step style "ASP_LP名" — the campaign/landing-page name the friend
     // entered through, attributed once at friend-add time and never
     // overwritten (see migration 022). LEFT JOINed in the list query.
@@ -110,10 +127,17 @@ friends.get('/api/friends', async (c) => {
       c.req.query('handled') === 'unhandled' ? 'unhandled' : null;
 
     const db = c.env.DB;
+    const currentStaff = c.get('staff');
 
     // Build WHERE conditions
     const conditions: string[] = [];
     const binds: unknown[] = [];
+
+    // staff ロールは自分が担当（主または副）のfriendだけに絞り込む
+    if (currentStaff.role === 'staff') {
+      conditions.push('(f.primary_staff_id = ? OR f.secondary_staff_id = ?)');
+      binds.push(currentStaff.id, currentStaff.id);
+    }
     if (tagId) {
       conditions.push('EXISTS (SELECT 1 FROM friend_tags ft WHERE ft.friend_id = f.id AND ft.tag_id = ?)');
       binds.push(tagId);
@@ -189,6 +213,11 @@ friends.get('/api/friends', async (c) => {
     // Operators can re-open a resolved chat, which inserts a new row; reading
     // the oldest row would show stale 対応済み in those cases. We mirror the
     // chats list's DESC convention here so the badge agrees with /chats.
+    //
+    // staff_members LEFT JOIN は includeChatStatus の有無に関わらず常に追加する。
+    // 担当者名（primary_staff_name / secondary_staff_name）はすべての一覧呼び出しで返す。
+    const staffJoins = ` LEFT JOIN staff_members sm_primary ON sm_primary.id = f.primary_staff_id`
+      + ` LEFT JOIN staff_members sm_secondary ON sm_secondary.id = f.secondary_staff_id`;
     const baseSelect = includeChatStatus
       ? `f.*, tl.name AS first_tracked_link_name,
          COALESCE(
@@ -196,11 +225,12 @@ friends.get('/api/friends', async (c) => {
             WHERE c.friend_id = f.id
             ORDER BY c.created_at DESC LIMIT 1),
            'resolved'
-         ) AS chat_status`
-      : `f.*`;
+         ) AS chat_status,
+         sm_primary.name AS primary_staff_name, sm_secondary.name AS secondary_staff_name`
+      : `f.*, sm_primary.name AS primary_staff_name, sm_secondary.name AS secondary_staff_name`;
     const baseFrom = includeChatStatus
-      ? `FROM friends f LEFT JOIN tracked_links tl ON tl.id = f.first_tracked_link_id`
-      : `FROM friends f`;
+      ? `FROM friends f LEFT JOIN tracked_links tl ON tl.id = f.first_tracked_link_id${staffJoins}`
+      : `FROM friends f${staffJoins}`;
     // Secondary tier of the search-mode ORDER BY (after match_score) and the
     // primary tier in non-search mode. Switched by ?sort=oldest|recent.
     const createdOrder = sort === 'oldest' ? 'ASC' : 'DESC';
@@ -505,6 +535,74 @@ friends.put('/api/friends/:id/metadata', async (c) => {
     });
   } catch (err) {
     console.error('PUT /api/friends/:id/metadata error:', err);
+    return c.json({ success: false, error: 'Internal server error' }, 500);
+  }
+});
+
+// PUT /api/friends/:id/assignment - assign primary/secondary staff (owner only)
+friends.put('/api/friends/:id/assignment', requireRole('owner'), async (c) => {
+  try {
+    const friendId = c.req.param('id')!;
+    const db = c.env.DB;
+
+    const body = await c.req.json<{ primaryStaffId?: string | null; secondaryStaffId?: string | null }>();
+
+    const hasPrimary = 'primaryStaffId' in body;
+    const hasSecondary = 'secondaryStaffId' in body;
+
+    if (!hasPrimary && !hasSecondary) {
+      return c.json({ success: false, error: 'primaryStaffId か secondaryStaffId の少なくとも一方を指定してください' }, 400);
+    }
+
+    // friend の存在確認。現在の担当値も重複チェックに使う。
+    const friend = await getFriendById(db, friendId);
+    if (!friend) {
+      return c.json({ success: false, error: 'Friend not found' }, 404);
+    }
+
+    // 更新後の値を確定（未指定なら現在のDB値を維持して重複チェックに使う）
+    const newPrimaryId = hasPrimary ? (body.primaryStaffId ?? null) : friend.primary_staff_id;
+    const newSecondaryId = hasSecondary ? (body.secondaryStaffId ?? null) : friend.secondary_staff_id;
+
+    if (newPrimaryId && newSecondaryId && newPrimaryId === newSecondaryId) {
+      return c.json({ success: false, error: '主担当と副担当に同じスタッフは指定できません' }, 400);
+    }
+
+    // 指定された staffId が staff_members に実在するか確認
+    if (newPrimaryId) {
+      const primaryStaff = await getStaffById(db, newPrimaryId);
+      if (!primaryStaff) {
+        return c.json({ success: false, error: '指定された主担当スタッフが見つかりません' }, 400);
+      }
+    }
+    if (newSecondaryId) {
+      const secondaryStaff = await getStaffById(db, newSecondaryId);
+      if (!secondaryStaff) {
+        return c.json({ success: false, error: '指定された副担当スタッフが見つかりません' }, 400);
+      }
+    }
+
+    // 指定されたフィールドだけを動的UPDATE
+    const sets: string[] = ['updated_at = ?'];
+    const values: (string | null)[] = [jstNow()];
+    if (hasPrimary) {
+      sets.push('primary_staff_id = ?');
+      values.push(body.primaryStaffId ?? null);
+    }
+    if (hasSecondary) {
+      sets.push('secondary_staff_id = ?');
+      values.push(body.secondaryStaffId ?? null);
+    }
+    values.push(friendId);
+
+    await db
+      .prepare(`UPDATE friends SET ${sets.join(', ')} WHERE id = ?`)
+      .bind(...values)
+      .run();
+
+    return c.json({ success: true, data: null });
+  } catch (err) {
+    console.error('PUT /api/friends/:id/assignment error:', err);
     return c.json({ success: false, error: 'Internal server error' }, 500);
   }
 });
