@@ -119,6 +119,21 @@ async function resolveFriendAndAccessToken(
   return { friend, accessToken: account.channel_access_token };
 }
 
+// Returns true when the caller may access the given friend's chat.
+// owner / admin are always allowed; staff must be primary or secondary assignee.
+async function canAccessFriend(
+  db: D1Database,
+  friendId: string,
+  staff: { id: string; role: string },
+): Promise<boolean> {
+  if (staff.role !== 'staff') return true;
+  const row = await db
+    .prepare('SELECT primary_staff_id, secondary_staff_id FROM friends WHERE id = ?')
+    .bind(friendId)
+    .first<{ primary_staff_id: string | null; secondary_staff_id: string | null }>();
+  return row?.primary_staff_id === staff.id || row?.secondary_staff_id === staff.id;
+}
+
 // ========== オペレーターCRUD ==========
 
 chats.get('/api/operators', async (c) => {
@@ -321,6 +336,12 @@ chats.get('/api/chats', async (c) => {
       bindings.push(lineAccountId);
     }
 
+    const currentStaff = c.get('staff');
+    if (currentStaff.role === 'staff') {
+      conditions.push('(f.primary_staff_id = ? OR f.secondary_staff_id = ?)');
+      bindings.push(currentStaff.id, currentStaff.id);
+    }
+
     if (conditions.length > 0) {
       sql += ' WHERE ' + conditions.join(' AND ');
     }
@@ -384,6 +405,11 @@ chats.get('/api/chats/:id', async (c) => {
     }
 
     const resolvedFriendId = chatRow?.friend_id ?? friendId!;
+
+    if (!await canAccessFriend(c.env.DB, resolvedFriendId, c.get('staff'))) {
+      return c.json({ success: false, error: 'Forbidden' }, 403);
+    }
+
     // 公開 ID は常に friend_id に統一する（lazy-create で ID が変わるのを防ぐため）。
     const responseId = resolvedFriendId;
     const operatorId = chatRow?.operator_id ?? null;
@@ -461,6 +487,9 @@ chats.put('/api/chats/:id', async (c) => {
     const id = c.req.param('id');
     const resolved = await resolveOrCreateChat(c.env.DB, id);
     if (!resolved) return c.json({ success: false, error: 'Not found' }, 404);
+    if (!await canAccessFriend(c.env.DB, resolved.friend_id, c.get('staff'))) {
+      return c.json({ success: false, error: 'Forbidden' }, 403);
+    }
     const body = await c.req.json<{ operatorId?: string | null; status?: string; notes?: string }>();
     await updateChat(c.env.DB, resolved.id, body);
     const updated = await getChatById(c.env.DB, resolved.id);
@@ -482,6 +511,9 @@ chats.post('/api/chats/:id/loading', async (c) => {
     const chatId = c.req.param('id');
     const chat = await resolveOrCreateChat(c.env.DB, chatId);
     if (!chat) return c.json({ success: false, error: 'Chat not found' }, 404);
+    if (!await canAccessFriend(c.env.DB, chat.friend_id, c.get('staff'))) {
+      return c.json({ success: false, error: 'Forbidden' }, 403);
+    }
 
     let loadingSecondsInput: number | undefined;
     try {
@@ -519,6 +551,9 @@ chats.post('/api/chats/:id/send', async (c) => {
     const chatId = c.req.param('id');
     const chat = await resolveOrCreateChat(c.env.DB, chatId);
     if (!chat) return c.json({ success: false, error: 'Chat not found' }, 404);
+    if (!await canAccessFriend(c.env.DB, chat.friend_id, c.get('staff'))) {
+      return c.json({ success: false, error: 'Forbidden' }, 403);
+    }
 
     const body = await c.req.json<{ messageType?: string; content: string }>();
     if (!body.content) return c.json({ success: false, error: 'content is required' }, 400);

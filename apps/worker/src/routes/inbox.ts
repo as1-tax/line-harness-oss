@@ -16,12 +16,14 @@ inbox.get('/api/inbox/unanswered', async (c) => {
     const pageStr = c.req.query('page');
     const pageSizeStr = c.req.query('pageSize');
 
+    const currentStaff = c.get('staff');
     const opts: UnansweredInboxOptions = {
       q: q || undefined,
       account,
       minWaitMinutes: minWaitMinutesStr ? Number.parseInt(minWaitMinutesStr, 10) : undefined,
       page: pageStr ? Number.parseInt(pageStr, 10) : undefined,
       pageSize: pageSizeStr ? Number.parseInt(pageSizeStr, 10) : undefined,
+      staffId: currentStaff.role === 'staff' ? currentStaff.id : undefined,
     };
 
     const result = await computeUnansweredInbox(c.env.DB, opts);
@@ -34,7 +36,9 @@ inbox.get('/api/inbox/unanswered', async (c) => {
 
 inbox.get('/api/inbox/unanswered/count', async (c) => {
   try {
-    const result = await countUnanswered(c.env.DB);
+    const currentStaff = c.get('staff');
+    const staffId = currentStaff.role === 'staff' ? currentStaff.id : undefined;
+    const result = await countUnanswered(c.env.DB, staffId);
     return c.json({ success: true, data: result });
   } catch (err) {
     console.error('GET /api/inbox/unanswered/count error:', err);

@@ -90,6 +90,8 @@ const CANDIDATES_SQL = `
     f.id            AS friend_id,
     f.display_name,
     f.picture_url,
+    f.primary_staff_id,
+    f.secondary_staff_id,
     f.line_account_id,
     COALESCE(la.name, '(未分類)') AS account_name,
     agg.last_incoming,
@@ -181,12 +183,15 @@ export interface UnansweredInboxOptions {
   minWaitMinutes?: number;
   page?: number;
   pageSize?: number;
+  staffId?: string;
 }
 
 interface RawCandidateRow {
   friend_id: string;
   display_name: string | null;
   picture_url: string | null;
+  primary_staff_id: string | null;
+  secondary_staff_id: string | null;
   line_account_id: string;
   account_name: string;
   last_incoming: string;
@@ -230,9 +235,19 @@ function applyFilters(rows: UnansweredRow[], opts: UnansweredInboxOptions): Unan
  * 4. JS で各 incoming を判定: 応答あり証拠 OR silent ルール match で「マッチ済」、
  *    マッチしない最新の incoming を preview として採用。全部マッチした thread のみ除外。
  */
-async function getAllUnansweredRows(db: D1Database): Promise<UnansweredRow[]> {
+async function getAllUnansweredRows(db: D1Database, staffId?: string): Promise<UnansweredRow[]> {
   const candidatesResult = await db.prepare(CANDIDATES_SQL).all<RawCandidateRow>();
-  const candidates = candidatesResult.results ?? [];
+  const allCandidates = candidatesResult.results ?? [];
+  if (allCandidates.length === 0) return [];
+
+  // staff ロールのとき、自分が主担当または副担当の friend だけに絞る。
+  // CANDIDATES_SQL の WHERE 句を変えずに JS 側でフィルターすることで、
+  // D1 bind 変数上限（本番事故 2026-05-08）に触れないようにする。
+  const candidates = staffId
+    ? allCandidates.filter(
+        (c) => c.primary_staff_id === staffId || c.secondary_staff_id === staffId,
+      )
+    : allCandidates;
   if (candidates.length === 0) return [];
 
   // 候補 friend のみを残すための Set。後段の JS group で他の friend は無視する。
@@ -309,7 +324,7 @@ export async function computeUnansweredInbox(
   const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, opts.pageSize ?? DEFAULT_PAGE_SIZE));
   const offset = (page - 1) * pageSize;
 
-  const allRows = await getAllUnansweredRows(db);
+  const allRows = await getAllUnansweredRows(db, opts.staffId);
   const filtered = applyFilters(allRows, opts);
   const slice = filtered.slice(offset, offset + pageSize);
 
@@ -331,8 +346,8 @@ export async function getUnansweredFriendIds(db: D1Database): Promise<Set<string
   return new Set(rows.map((r) => r.friendId));
 }
 
-export async function countUnanswered(db: D1Database): Promise<UnansweredCount> {
-  const allRows = await getAllUnansweredRows(db);
+export async function countUnanswered(db: D1Database, staffId?: string): Promise<UnansweredCount> {
+  const allRows = await getAllUnansweredRows(db, staffId);
 
   const byAccountMap = new Map<string, { accountName: string; count: number }>();
   let oldest: string | null = null;
