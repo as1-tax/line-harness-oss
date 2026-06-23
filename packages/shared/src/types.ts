@@ -45,6 +45,8 @@ export interface Friend {
    * 一覧 API の chat-status hydration が有効なときのみ付与.
    */
   chatStatus?: 'unread' | 'in_progress' | 'resolved';
+  /** 事務所側の管理名（LINEの表示名とは別に設定できる任意名称） */
+  managementName?: string | null;
   /** 作成日時 (ISO 8601) */
   createdAt: string;
   /** 更新日時 (ISO 8601) */

@@ -121,7 +121,7 @@ async function resolveFriendAndAccessToken(
 
 // Returns true when the caller may access the given friend's chat.
 // owner / admin are always allowed; staff must be primary or secondary assignee.
-async function canAccessFriend(
+export async function canAccessFriend(
   db: D1Database,
   friendId: string,
   staff: { id: string; role: string },

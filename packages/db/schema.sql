@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS friends (
   score               INTEGER NOT NULL DEFAULT 0,
   primary_staff_id    TEXT REFERENCES staff_members(id) ON DELETE SET NULL,
   secondary_staff_id  TEXT REFERENCES staff_members(id) ON DELETE SET NULL,
+  management_name     TEXT,
   created_at          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now', '+9 hours')),
   updated_at          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f', 'now', '+9 hours'))
 );

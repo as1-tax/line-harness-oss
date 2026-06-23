@@ -15,6 +15,7 @@ import type { Friend as DbFriend, Tag as DbTag } from '@line-crm/db';
 import { fireEvent } from '../services/event-bus.js';
 import { buildMessage } from '../services/step-delivery.js';
 import { requireRole } from '../middleware/role-guard.js';
+import { canAccessFriend } from './chats.js';
 import type { Env } from '../index.js';
 
 const friends = new Hono<Env>();
@@ -33,6 +34,7 @@ function serializeFriend(row: DbFriend) {
     id: row.id,
     lineUserId: row.line_user_id,
     displayName: row.display_name,
+    managementName: row.management_name ?? null,
     pictureUrl: row.picture_url,
     statusMessage: row.status_message,
     isFollowing: Boolean(row.is_following),
@@ -147,8 +149,8 @@ friends.get('/api/friends', async (c) => {
       binds.push(lineAccountId);
     }
     if (search) {
-      conditions.push('f.display_name LIKE ?');
-      binds.push(`%${search}%`);
+      conditions.push('(f.display_name LIKE ? OR f.management_name LIKE ?)');
+      binds.push(`%${search}%`, `%${search}%`);
     }
     // Unhandled filter: chats.status === 'unread'.
     //
@@ -244,16 +246,16 @@ friends.get('/api/friends', async (c) => {
       listStmt = db.prepare(
         `SELECT ${baseSelect},
                 CASE
-                  WHEN f.display_name LIKE ? THEN 0
-                  WHEN f.display_name LIKE ? THEN 1
-                  WHEN f.display_name LIKE ? OR f.display_name LIKE ? THEN 2
+                  WHEN f.display_name LIKE ? OR f.management_name LIKE ? THEN 0
+                  WHEN f.display_name LIKE ? OR f.management_name LIKE ? THEN 1
+                  WHEN f.display_name LIKE ? OR f.display_name LIKE ? OR f.management_name LIKE ? OR f.management_name LIKE ? THEN 2
                   ELSE 3
                 END AS match_score
          ${baseFrom} ${where}
          ORDER BY match_score ASC, f.created_at ${createdOrder}
          LIMIT ? OFFSET ?`,
       );
-      listBinds = [exactPattern, prefixPattern, wordStartAscii, wordStartFullWidth, ...binds, limit, offset];
+      listBinds = [exactPattern, exactPattern, prefixPattern, prefixPattern, wordStartAscii, wordStartFullWidth, wordStartAscii, wordStartFullWidth, ...binds, limit, offset];
     } else {
       listStmt = db.prepare(
         `SELECT ${baseSelect} ${baseFrom} ${where} ORDER BY f.created_at ${createdOrder} LIMIT ? OFFSET ?`,
@@ -535,6 +537,37 @@ friends.put('/api/friends/:id/metadata', async (c) => {
     });
   } catch (err) {
     console.error('PUT /api/friends/:id/metadata error:', err);
+    return c.json({ success: false, error: 'Internal server error' }, 500);
+  }
+});
+
+// PATCH /api/friends/:id/management-name — update management name.
+// Accessible by owner/admin and the friend's assigned primary/secondary staff.
+friends.patch('/api/friends/:id/management-name', async (c) => {
+  try {
+    const friendId = c.req.param('id')!;
+    const db = c.env.DB;
+
+    const friend = await getFriendById(db, friendId);
+    if (!friend) {
+      return c.json({ success: false, error: 'Friend not found' }, 404);
+    }
+
+    if (!await canAccessFriend(db, friendId, c.get('staff'))) {
+      return c.json({ success: false, error: 'Forbidden' }, 403);
+    }
+
+    const body = await c.req.json<{ managementName?: string | null }>();
+    const name = body.managementName?.trim() || null;
+
+    await db
+      .prepare('UPDATE friends SET management_name = ?, updated_at = ? WHERE id = ?')
+      .bind(name, jstNow(), friendId)
+      .run();
+
+    return c.json({ success: true, data: null });
+  } catch (err) {
+    console.error('PATCH /api/friends/:id/management-name error:', err);
     return c.json({ success: false, error: 'Internal server error' }, 500);
   }
 });

@@ -26,6 +26,13 @@ import { buildMessage, expandVariables } from '../services/step-delivery.js';
 import { notifyAssignedStaff } from '../services/discord-notify.js';
 import type { Env } from '../index.js';
 
+function buildNotifyName(friend: Friend): string | null {
+  const mn = friend.management_name;
+  const dn = friend.display_name;
+  if (mn) return dn ? `${mn}（${dn}）` : mn;
+  return dn ?? null;
+}
+
 const webhook = new Hono<Env>();
 
 // LINE webhook bodies are small (events array). Cap defends against unauthenticated
@@ -521,7 +528,7 @@ async function handleEvent(
 
     if (adminUrl) {
       try {
-        await notifyAssignedStaff(db, friend.id, friend.display_name, content, adminUrl);
+        await notifyAssignedStaff(db, friend.id, buildNotifyName(friend), content, adminUrl);
       } catch (err) {
         console.error('[discord] non-text notify error:', err);
       }
@@ -677,7 +684,7 @@ async function handleEvent(
       await upsertChatOnMessage(db, friend.id);
       if (adminUrl) {
         try {
-          await notifyAssignedStaff(db, friend.id, friend.display_name, incomingText, adminUrl);
+          await notifyAssignedStaff(db, friend.id, buildNotifyName(friend), incomingText, adminUrl);
         } catch (err) {
           console.error('[discord] text notify error:', err);
         }

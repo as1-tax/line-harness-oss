@@ -180,6 +180,11 @@ export const api = {
         method: 'PUT',
         body: JSON.stringify(body),
       }),
+    updateManagementName: (friendId: string, managementName: string | null) =>
+      fetchApi<ApiResponse<null>>(`/api/friends/${friendId}/management-name`, {
+        method: 'PATCH',
+        body: JSON.stringify({ managementName }),
+      }),
   },
   tags: {
     list: () =>

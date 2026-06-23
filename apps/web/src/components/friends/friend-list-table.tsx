@@ -33,18 +33,38 @@ export default function FriendListTable({ friends, allTags, onRefresh, currentRo
   const [assignLoading, setAssignLoading] = useState(false)
   const [assignError, setAssignError] = useState('')
 
+  // 管理名編集
+  const [managementNameValues, setManagementNameValues] = useState<Record<string, string>>({})
+  const [managementNameSaving, setManagementNameSaving] = useState(false)
+  const [managementNameError, setManagementNameError] = useState('')
+
   const toggleExpand = (id: string, friend?: FriendListItem) => {
     const next = expandedId === id ? null : id
     setExpandedId(next)
     setAddingTagForFriend(null)
     setSelectedTagId('')
     setError('')
-    // 展開時に現在の担当者をドロップダウンの初期値にセット
+    // 展開時に現在の担当者・管理名をフォームの初期値にセット
     if (next && friend) {
       setAssignPrimary(friend.primaryStaff?.id ?? '')
       setAssignSecondary(friend.secondaryStaff?.id ?? '')
+      setManagementNameValues(v => ({ ...v, [id]: friend.managementName ?? '' }))
     }
     setAssignError('')
+    setManagementNameError('')
+  }
+
+  const handleSaveManagementName = async (friendId: string) => {
+    setManagementNameSaving(true)
+    setManagementNameError('')
+    try {
+      await api.friends.updateManagementName(friendId, managementNameValues[friendId] || null)
+      onRefresh()
+    } catch {
+      setManagementNameError('管理名の保存に失敗しました')
+    } finally {
+      setManagementNameSaving(false)
+    }
   }
 
   const handleAssign = async (friendId: string) => {
@@ -142,6 +162,31 @@ export default function FriendListTable({ friends, allTags, onRefresh, currentRo
                     <div>
                       <p className="text-xs font-semibold text-gray-500 mb-1">LINE ユーザーID</p>
                       <p className="text-xs text-gray-600 font-mono break-all select-all">{friend.lineUserId}</p>
+                    </div>
+
+                    {/* 管理名（アクセス可能なスタッフ全員が編集可） */}
+                    <div>
+                      <p className="text-xs font-semibold text-gray-500 mb-2">管理名</p>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={managementNameValues[friend.id] ?? ''}
+                          onChange={(e) => setManagementNameValues(v => ({ ...v, [friend.id]: e.target.value }))}
+                          placeholder="株式会社○○ 山田太郎 様"
+                          className="flex-1 text-sm border border-gray-300 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-green-500"
+                        />
+                        <button
+                          onClick={() => handleSaveManagementName(friend.id)}
+                          disabled={managementNameSaving}
+                          className="shrink-0 px-3 py-1 text-xs font-medium rounded-md text-white disabled:opacity-50 transition-opacity"
+                          style={{ backgroundColor: '#06C755' }}
+                        >
+                          {managementNameSaving ? '保存中...' : '保存'}
+                        </button>
+                      </div>
+                      {managementNameError && (
+                        <p className="text-xs text-red-600 mt-1">{managementNameError}</p>
+                      )}
                     </div>
 
                     {/* 担当者管理（owner のみ編集可） */}

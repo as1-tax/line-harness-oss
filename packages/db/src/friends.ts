@@ -12,6 +12,7 @@ export interface Friend {
   first_tracked_link_id: string | null;
   primary_staff_id: string | null;
   secondary_staff_id: string | null;
+  management_name: string | null;
   created_at: string;
   updated_at: string;
 }
