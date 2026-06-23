@@ -23,6 +23,7 @@ import {
 import type { EntryRoute, Friend } from '@line-crm/db';
 import { fireEvent } from '../services/event-bus.js';
 import { buildMessage, expandVariables } from '../services/step-delivery.js';
+import { notifyAssignedStaff } from '../services/discord-notify.js';
 import type { Env } from '../index.js';
 
 const webhook = new Hono<Env>();
@@ -164,7 +165,7 @@ webhook.post('/webhook', async (c) => {
   const processingPromise = (async () => {
     for (const event of body.events) {
       try {
-        await handleEvent(db, lineClient, event, channelAccessToken, matchedAccountId, c.env.WORKER_URL || new URL(c.req.url).origin, c.env.LIFF_URL, c.env.IMAGES);
+        await handleEvent(db, lineClient, event, channelAccessToken, matchedAccountId, c.env.WORKER_URL || new URL(c.req.url).origin, c.env.LIFF_URL, c.env.IMAGES, c.env.ADMIN_PUBLIC_URL);
       } catch (err) {
         console.error('Error handling webhook event:', err);
       }
@@ -185,6 +186,7 @@ async function handleEvent(
   workerUrl?: string,
   liffUrl?: string,
   r2?: R2Bucket,
+  adminUrl?: string,
 ): Promise<void> {
   if (event.type === 'follow') {
     const userId =
@@ -516,6 +518,14 @@ async function handleEvent(
       )
       .bind(crypto.randomUUID(), friend.id, msg.type, finalContent, jstNow())
       .run();
+
+    if (adminUrl) {
+      try {
+        await notifyAssignedStaff(db, friend.id, friend.display_name, content, adminUrl);
+      } catch (err) {
+        console.error('[discord] non-text notify error:', err);
+      }
+    }
     return;
   }
 
@@ -665,6 +675,13 @@ async function handleEvent(
     // auto_replies にマッチしなかった = 自発メッセージ → unread にする
     if (!matched) {
       await upsertChatOnMessage(db, friend.id);
+      if (adminUrl) {
+        try {
+          await notifyAssignedStaff(db, friend.id, friend.display_name, incomingText, adminUrl);
+        } catch (err) {
+          console.error('[discord] text notify error:', err);
+        }
+      }
     }
 
     // イベントバス発火: message_received

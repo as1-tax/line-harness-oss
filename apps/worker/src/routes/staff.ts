@@ -26,6 +26,7 @@ function serializeStaff(row: StaffMember, masked = true) {
     role: row.role,
     apiKey: masked ? maskApiKey(row.api_key) : row.api_key,
     isActive: Boolean(row.is_active),
+    discordWebhookUrl: row.discord_webhook_url,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -132,6 +133,7 @@ staff.patch('/api/staff/:id', requireRole('owner'), async (c) => {
       email?: string | null;
       role?: string;
       isActive?: boolean;
+      discordWebhookUrl?: string | null;
     }>();
 
     const validRoles = ['owner', 'admin', 'staff'] as const;
@@ -161,6 +163,7 @@ staff.patch('/api/staff/:id', requireRole('owner'), async (c) => {
       email: body.email,
       role: body.role as 'owner' | 'admin' | 'staff' | undefined,
       is_active: body.isActive !== undefined ? (body.isActive ? 1 : 0) : undefined,
+      discord_webhook_url: body.discordWebhookUrl,
     });
 
     if (!updated) {

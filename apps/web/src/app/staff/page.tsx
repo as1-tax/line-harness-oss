@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Fragment } from 'react'
 import Header from '@/components/layout/header'
 import { fetchApi } from '@/lib/api'
 import type { ApiResponse } from '@line-crm/shared'
@@ -36,6 +36,11 @@ export default function StaffPage() {
   // New API key banner
   const [newKey, setNewKey] = useState<NewApiKey | null>(null)
   const [copied, setCopied] = useState(false)
+
+  // Discord webhook editing
+  const [discordExpandedId, setDiscordExpandedId] = useState<string | null>(null)
+  const [discordEditValues, setDiscordEditValues] = useState<Record<string, string>>({})
+  const [discordSaving, setDiscordSaving] = useState(false)
 
   // Create form
   const [showForm, setShowForm] = useState(false)
@@ -135,6 +140,23 @@ export default function StaffPage() {
       await loadMembers()
     } catch {
       setError('削除に失敗しました')
+    }
+  }
+
+  const handleSaveDiscord = async (member: StaffMember) => {
+    setDiscordSaving(true)
+    try {
+      const url = discordEditValues[member.id] ?? ''
+      await fetchApi<ApiResponse<StaffMember>>(`/api/staff/${member.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ discordWebhookUrl: url || null }),
+      })
+      setDiscordExpandedId(null)
+      await loadMembers()
+    } catch {
+      setError('Discord Webhook URLの保存に失敗しました')
+    } finally {
+      setDiscordSaving(false)
     }
   }
 
@@ -290,48 +312,96 @@ export default function StaffPage() {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {members.map((member) => (
-                <tr key={member.id} className="hover:bg-gray-50 transition-colors">
-                  <td className="px-4 py-3 font-medium text-gray-900">{member.name}</td>
-                  <td className="px-4 py-3 text-gray-500 hidden sm:table-cell">{member.email ?? '—'}</td>
-                  <td className="px-4 py-3">
-                    <RoleBadge role={member.role} />
-                  </td>
-                  <td className="px-4 py-3 text-gray-400 font-mono text-xs hidden md:table-cell">
-                    {maskKey(member.apiKey ?? '')}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={`inline-flex items-center gap-1.5 text-xs ${member.isActive ? 'text-green-700' : 'text-gray-400'}`}>
-                      <span className={`w-1.5 h-1.5 rounded-full ${member.isActive ? 'bg-green-500' : 'bg-gray-300'}`} />
-                      {member.isActive ? '有効' : '無効'}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center justify-end gap-2">
-                      {member.role !== 'owner' && (
-                        <>
+                <Fragment key={member.id}>
+                  <tr className="hover:bg-gray-50 transition-colors">
+                    <td className="px-4 py-3 font-medium text-gray-900">{member.name}</td>
+                    <td className="px-4 py-3 text-gray-500 hidden sm:table-cell">{member.email ?? '—'}</td>
+                    <td className="px-4 py-3">
+                      <RoleBadge role={member.role} />
+                    </td>
+                    <td className="px-4 py-3 text-gray-400 font-mono text-xs hidden md:table-cell">
+                      {maskKey(member.apiKey ?? '')}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex items-center gap-1.5 text-xs ${member.isActive ? 'text-green-700' : 'text-gray-400'}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${member.isActive ? 'bg-green-500' : 'bg-gray-300'}`} />
+                        {member.isActive ? '有効' : '無効'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => {
+                            if (discordExpandedId === member.id) {
+                              setDiscordExpandedId(null)
+                            } else {
+                              setDiscordEditValues(v => ({ ...v, [member.id]: member.discordWebhookUrl ?? '' }))
+                              setDiscordExpandedId(member.id)
+                            }
+                          }}
+                          className={`px-2.5 py-1 text-xs font-medium rounded border transition-colors ${
+                            member.discordWebhookUrl
+                              ? 'text-indigo-600 border-indigo-200 bg-white hover:bg-indigo-50'
+                              : 'text-gray-500 border-gray-300 bg-white hover:bg-gray-50'
+                          }`}
+                        >
+                          Discord{member.discordWebhookUrl ? ' ✓' : ''}
+                        </button>
+                        {member.role !== 'owner' && (
+                          <>
+                            <button
+                              onClick={() => handleToggleActive(member)}
+                              className="px-2.5 py-1 text-xs font-medium text-gray-600 bg-white border border-gray-300 rounded hover:bg-gray-50 transition-colors"
+                            >
+                              {member.isActive ? '無効化' : '有効化'}
+                            </button>
+                            <button
+                              onClick={() => handleRegenerateKey(member)}
+                              className="px-2.5 py-1 text-xs font-medium text-blue-600 bg-white border border-blue-200 rounded hover:bg-blue-50 transition-colors"
+                            >
+                              キー再生成
+                            </button>
+                            <button
+                              onClick={() => handleDelete(member)}
+                              className="px-2.5 py-1 text-xs font-medium text-red-600 bg-white border border-red-200 rounded hover:bg-red-50 transition-colors"
+                            >
+                              削除
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                  {discordExpandedId === member.id && (
+                    <tr className="bg-indigo-50 border-b border-indigo-100">
+                      <td colSpan={6} className="px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs font-medium text-gray-700 shrink-0">Discord Webhook URL</span>
+                          <input
+                            type="url"
+                            value={discordEditValues[member.id] ?? ''}
+                            onChange={(e) => setDiscordEditValues(v => ({ ...v, [member.id]: e.target.value }))}
+                            placeholder="https://discord.com/api/webhooks/..."
+                            className="flex-1 px-3 py-1.5 text-xs border border-indigo-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                          />
                           <button
-                            onClick={() => handleToggleActive(member)}
-                            className="px-2.5 py-1 text-xs font-medium text-gray-600 bg-white border border-gray-300 rounded hover:bg-gray-50 transition-colors"
+                            onClick={() => handleSaveDiscord(member)}
+                            disabled={discordSaving}
+                            className="shrink-0 px-3 py-1.5 text-xs font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
                           >
-                            {member.isActive ? '無効化' : '有効化'}
+                            {discordSaving ? '保存中...' : '保存'}
                           </button>
                           <button
-                            onClick={() => handleRegenerateKey(member)}
-                            className="px-2.5 py-1 text-xs font-medium text-blue-600 bg-white border border-blue-200 rounded hover:bg-blue-50 transition-colors"
+                            onClick={() => setDiscordExpandedId(null)}
+                            className="shrink-0 px-3 py-1.5 text-xs font-medium text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
                           >
-                            キー再生成
+                            キャンセル
                           </button>
-                          <button
-                            onClick={() => handleDelete(member)}
-                            className="px-2.5 py-1 text-xs font-medium text-red-600 bg-white border border-red-200 rounded hover:bg-red-50 transition-colors"
-                          >
-                            削除
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </td>
-                </tr>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               ))}
             </tbody>
           </table>

@@ -843,6 +843,7 @@ export interface StaffMember {
   role: 'owner' | 'admin' | 'staff';
   apiKey: string;
   isActive: boolean;
+  discordWebhookUrl: string | null;
   createdAt: string;
   updatedAt: string;
 }

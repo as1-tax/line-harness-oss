@@ -7,6 +7,7 @@ export interface StaffMember {
   role: 'owner' | 'admin' | 'staff';
   api_key: string;
   is_active: number;
+  discord_webhook_url: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -22,6 +23,7 @@ export interface UpdateStaffInput {
   email?: string | null;
   role?: 'owner' | 'admin' | 'staff';
   is_active?: number;
+  discord_webhook_url?: string | null;
 }
 
 function generateApiKey(): string {
@@ -93,6 +95,7 @@ export async function updateStaffMember(
   if (input.email !== undefined) { sets.push('email = ?'); values.push(input.email ?? null); }
   if (input.role !== undefined) { sets.push('role = ?'); values.push(input.role); }
   if (input.is_active !== undefined) { sets.push('is_active = ?'); values.push(input.is_active); }
+  if (input.discord_webhook_url !== undefined) { sets.push('discord_webhook_url = ?'); values.push(input.discord_webhook_url ?? null); }
 
   values.push(id);
   await db
